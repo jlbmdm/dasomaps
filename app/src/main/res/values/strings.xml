@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DasoMaps</string>
+    
+    <!-- Navegación -->
+    <string name="nav_map">Mapa</string>
+    <string name="nav_layers">Capas</string>
+    <string name="nav_geometries">Geometrías</string>
+    <string name="nav_settings">Configuración</string>
+    
+    <!-- Controles del mapa -->
+    <string name="map_zoom_in">Aumentar zoom</string>
+    <string name="map_zoom_out">Disminuir zoom</string>
+    <string name="map_my_location">Mi ubicación</string>
+    <string name="map_center_on_location">Centrar en mi ubicación</string>
+    
+    <!-- Gestión de Capas -->
+    <string name="layers_title">Capas</string>
+    <string name="layers_empty">No hay capas disponibles</string>
+    <string name="layers_empty_subtitle">Añade tu primer archivo MBTiles o crea capas de ejemplo</string>
+    <string name="layers_create_sample">Crear capas de ejemplo</string>
+    <string name="layers_add_new">Añadir capa</string>
+    <string name="layers_add_mbtiles">Añadir MBTiles</string>
+    <string name="layers_filter_all">Todas</string>
+    <string name="layers_filter_base">Mapa Base</string>
+    <string name="layers_filter_raster">Ráster</string>
+    <string name="layers_filter_vector">Vectorial</string>
+    <string name="layers_filter_mbtiles">MBTiles</string>
+    <string name="layers_adjust_opacity">Ajustar opacidad</string>
+    <string name="layers_delete">Eliminar capa</string>
+    <string name="layers_delete_confirm_title">Eliminar capa</string>
+    <string name="layers_delete_confirm_message">¿Estás seguro de que quieres eliminar esta capa?</string>
+    <string name="layers_opacity_label">Opacidad:</string>
+    <string name="layers_available_offline">Disponible offline</string>
+    <string name="layers_visible">Visible</string>
+    <string name="layers_hidden">Oculta</string>
+    <string name="layers_active_count">%d capa(s) activa(s)</string>
+    <string name="layers_mbtiles_active_count">%d capa(s) MBTiles activa(s)</string>
+    
+    <!-- Diálogo MBTiles -->
+    <string name="mbtiles_dialog_title">Añadir capa MBTiles</string>
+    <string name="mbtiles_dialog_select_file">Seleccionar archivo del dispositivo</string>
+    <string name="mbtiles_dialog_available_files">Archivos MBTiles disponibles:</string>
+    <string name="mbtiles_dialog_no_files">No se encontraron archivos MBTiles</string>
+    <string name="mbtiles_dialog_no_files_hint">Usa el botón de arriba para seleccionar un archivo</string>
+    <string name="mbtiles_dialog_file_selected">Archivo seleccionado:</string>
+    <string name="mbtiles_error_invalid">El archivo seleccionado no es un MBTiles válido</string>
+    <string name="mbtiles_error_import">Error al importar archivo</string>
+    <string name="mbtiles_error_search">Error al buscar archivos</string>
+    
+    <!-- Tipos de Capas -->
+    <string name="layer_type_base_map">Mapa Base</string>
+    <string name="layer_type_raster">Ráster</string>
+    <string name="layer_type_vector">Vectorial</string>
+    <string name="layer_type_mbtiles">MBTiles</string>
+    
+    <!-- Permisos -->
+    <string name="permission_location_title">Permisos de ubicación necesarios</string>
+    <string name="permission_location_message">DasoMaps necesita acceso a tu ubicación para mostrarte tu posición en el mapa y permitirte capturar geometrías con datos de ubicación precisos.</string>
+    <string name="permission_grant">Conceder permisos</string>
+    <string name="permission_deny">Cancelar</string>
+    <string name="permission_denied">Permisos de ubicación denegados</string>
+    
+    <!-- Mensajes de error -->
+    <string name="error_location_unavailable">Ubicación no disponible</string>
+    <string name="error_loading">Error al cargar</string>
+    <string name="error_loading_layers">Error al cargar capas</string>
+    <string name="error_adding_layer">Error al añadir capa</string>
+    <string name="error_updating_layer">Error al actualizar capa</string>
+    <string name="error_deleting_layer">Error al eliminar capa</string>
+    <string name="error_generic">Ha ocurrido un error</string>
+    
+    <!-- Acciones -->
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_delete">Eliminar</string>
+    <string name="action_add">Añadir</string>
+    <string name="action_edit">Editar</string>
+    
+    <!-- Estados -->
+    <string name="state_loading">Cargando…</string>
+    <string name="state_offline">Sin conexión</string>
+    <string name="state_online">Conectado</string>
+    <string name="state_synced">Sincronizado</string>
+    <string name="state_pending_sync">Pendiente de sincronización</string>
+    
+    <!-- Pantallas placeholder -->
+    <string name="placeholder_geometries">Geometrías - Por implementar</string>
+    <string name="placeholder_settings">Configuración - Por implementar</string>
+</resources>

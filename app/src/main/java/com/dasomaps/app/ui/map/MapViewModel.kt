@@ -1,0 +1,62 @@
+package com.dasomaps.app.ui.map
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.dasomaps.app.data.repository.LayerRepository
+import com.dasomaps.app.utils.Constants
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import org.osmdroid.util.GeoPoint
+import timber.log.Timber
+
+class MapViewModel(private val layerRepository: LayerRepository) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(MapUiState())
+    val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
+
+    fun zoomIn() {
+        _uiState.update {
+            val newZoom = (it.zoom + 1).coerceAtMost(Constants.Map.MAX_ZOOM)
+            it.copy(zoom = newZoom)
+        }
+    }
+
+    fun zoomOut() {
+        _uiState.update {
+            val newZoom = (it.zoom - 1).coerceAtLeast(Constants.Map.MIN_ZOOM)
+            it.copy(zoom = newZoom)
+        }
+    }
+
+    fun setMyLocationEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(isMyLocationEnabled = enabled) }
+    }
+
+    fun centerOnMyLocation() {
+        // Esta función necesitará acceso a la ubicación real del dispositivo.
+        // Por ahora, simplemente activamos el estado.
+        setMyLocationEnabled(true)
+    }
+
+    fun showError(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
+        Timber.e("Error mostrado: $message")
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    init {
+        // Cargar capas visibles cuando se crea el ViewModel
+        viewModelScope.launch {
+            layerRepository.getVisibleLayers().collect { layers ->
+                _uiState.update { it.copy(visibleLayers = layers) }
+                Timber.d("Capas visibles actualizadas: ${layers.size}")
+            }
+        }
+    }
+}
