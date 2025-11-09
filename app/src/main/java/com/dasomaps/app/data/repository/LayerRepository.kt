@@ -140,6 +140,36 @@ class LayerRepository(
     }
 
     /**
+     * Reordena las capas actualizando sus zIndex.
+     * 
+     * @param orderedLayers Lista de capas en el orden deseado (índice 0 = más abajo, último = más arriba)
+     */
+    suspend fun reorderLayers(orderedLayers: List<Layer>) {
+        try {
+            orderedLayers.forEachIndexed { index, layer ->
+                val updatedLayer = layer.copy(
+                    zIndex = index,
+                    updatedAt = System.currentTimeMillis()
+                )
+                layerDao.updateLayer(modelToEntity(updatedLayer))
+            }
+            Timber.d("Capas reordenadas: ${orderedLayers.size} capas")
+        } catch (e: Exception) {
+            Timber.e(e, "Error al reordenar capas")
+            throw e
+        }
+    }
+
+    /**
+     * Obtiene todas las capas ordenadas por zIndex (ascendente).
+     */
+    fun getLayersOrderedByZIndex(): Flow<List<Layer>> {
+        return getAllLayers().map { layers ->
+            layers.sortedBy { it.zIndex }
+        }
+    }
+
+    /**
      * Crea capas de ejemplo para testing.
      */
     suspend fun createSampleLayers() {
@@ -212,6 +242,7 @@ class LayerRepository(
             type = LayerType.valueOf(entity.type),
             isVisible = entity.isVisible,
             opacity = entity.opacity,
+            zIndex = entity.zIndex,
             localPath = entity.localPath,
             remoteUrl = entity.remoteUrl,
             syncStatus = SyncStatus.valueOf(entity.syncStatus),
@@ -241,6 +272,7 @@ class LayerRepository(
             type = layer.type.name,
             isVisible = layer.isVisible,
             opacity = layer.opacity,
+            zIndex = layer.zIndex,
             localPath = layer.localPath,
             remoteUrl = layer.remoteUrl,
             syncStatus = layer.syncStatus.name,

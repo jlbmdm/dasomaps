@@ -2,7 +2,6 @@ package com.dasomaps.app.ui.map
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.dasomaps.app.data.model.Layer
 import com.dasomaps.app.data.repository.LayerRepository
 import com.dasomaps.app.utils.Constants
 import kotlinx.coroutines.flow.MutableStateFlow

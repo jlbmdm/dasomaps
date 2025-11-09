@@ -10,6 +10,7 @@ accompanistPermissions = "0.34.0"
 jtsCore = "1.19.0"
 room = "2.6.1"
 sqliteKtx = "2.4.0"
+sqliteJdbc = "3.46.0.0"
 postgresql = "42.7.3"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
@@ -47,6 +48,7 @@ roomRuntime = { module = "androidx.room:room-runtime", version.ref = "room" }
 roomKtx = { module = "androidx.room:room-ktx", version.ref = "room" }
 roomCompiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 sqliteKtx = { module = "androidx.sqlite:sqlite-ktx", version.ref = "sqliteKtx" }
+sqliteJdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofitConverterGson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }

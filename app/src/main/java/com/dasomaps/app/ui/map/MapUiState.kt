@@ -14,8 +14,8 @@ import org.osmdroid.util.GeoPoint
  * @property isLoading Si se está realizando una operación de carga.
  */
 data class MapUiState(
-    val zoom: Double = 15.0,
-    val center: GeoPoint = GeoPoint(40.416775, -3.703790), // Centro inicial en Madrid
+    val zoom: Double = 12.0,
+    val center: GeoPoint = GeoPoint(41.6523, -4.7245), // Valladolid
     val isMyLocationEnabled: Boolean = false,
     val visibleLayers: List<Layer> = emptyList(),
     val errorMessage: String? = null,

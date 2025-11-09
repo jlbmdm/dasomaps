@@ -15,6 +15,7 @@ import com.dasomaps.app.data.local.DasoMapsDatabase
 import com.dasomaps.app.data.model.LayerType
 import com.dasomaps.app.data.model.LocationState
 import com.dasomaps.app.data.repository.LayerRepository
+import com.dasomaps.app.ui.components.CoordinateDisplay
 import com.dasomaps.app.utils.Constants
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -24,6 +25,7 @@ import org.osmdroid.tileprovider.modules.MapTileFileArchiveProvider
 import org.osmdroid.tileprovider.modules.MapTileModuleProviderBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
+import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
@@ -36,10 +38,11 @@ import java.io.File
  * Pantalla principal del mapa.
  * 
  * Muestra un mapa interactivo con osmdroid y controles para:
- * - Zoom in/out
- * - Centrar en ubicación del usuario
+ * - Zoom in/out (botones al fondo, encima de coordenadas)
+ * - Centrar en ubicación del usuario (botón en esquina derecha)
  * - Visualización de capas MBTiles con opacidad
  * - Barra de escala en la parte inferior
+ * - Coordenadas en dos cajas horizontales con escala en número
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -94,6 +97,11 @@ fun MapScreen() {
 
     // Efecto para actualizar overlays de capas MBTiles
     LaunchedEffect(uiState.visibleLayers) {
+        Timber.d("=== LaunchedEffect visibleLayers: total capas = ${uiState.visibleLayers.size} ===")
+        uiState.visibleLayers.forEach { layer ->
+            Timber.d("  Capa: ${layer.name}, tipo=${layer.type}, visible=${layer.isVisible}, path=${layer.localPath}")
+        }
+        
         mapView?.let { map ->
             // Obtener capas MBTiles del estado
             val mbtilesLayers = uiState.visibleLayers.filter { it.type == LayerType.MBTILES }
@@ -114,10 +122,12 @@ fun MapScreen() {
             
             // Añadir o actualizar overlays para capas visibles
             mbtilesLayers.forEach { layer ->
+                Timber.d("Procesando capa: ${layer.name}, isVisible=${layer.isVisible}, path=${layer.localPath}")
                 if (layer.isVisible && layer.localPath != null) {
                     val file = File(layer.localPath)
                     
                     if (file.exists()) {
+                        Timber.d("Archivo existe: ${file.absolutePath}, tamaño=${file.length()} bytes")
                         // Si el overlay ya existe, solo actualizar opacidad
                         val existingOverlay = mbtilesOverlays[layer.id]
                         if (existingOverlay != null) {
@@ -133,23 +143,33 @@ fun MapScreen() {
                         } else {
                             // Crear nuevo overlay
                             try {
+                                // Leer metadatos del MBTiles
+                                val metadata = com.dasomaps.app.utils.MBTilesManager.readMBTilesMetadata(file)
+                                Timber.d("Metadatos del MBTiles '${layer.name}': $metadata")
+                                
+                                // Crear TileSource personalizado basado en metadatos
+                                val tileSource = com.dasomaps.app.utils.MBTilesManager.createTileSourceFromMBTiles(file, metadata)
+                                
                                 // Abrir el archivo MBTiles usando ArchiveFileFactory
                                 val archiveFile = ArchiveFileFactory.getArchiveFile(file)
                                 if (archiveFile != null) {
-                                    // Crear el módulo provider para el archivo
+                                    Timber.d("✅ Archivo MBTiles abierto: ${file.name}")
+                                    
+                                    // Crear el módulo provider para el archivo CON EL TILE SOURCE CORRECTO
                                     val moduleProvider = MapTileFileArchiveProvider(
                                         SimpleRegisterReceiver(context),
-                                        TileSourceFactory.DEFAULT_TILE_SOURCE,
+                                        tileSource,  // Usar el TileSource del MBTiles, NO el default
                                         arrayOf(archiveFile)
                                     )
                                     
                                     // Envolver el módulo en un MapTileProviderArray
-                                    // Este es el tipo correcto que TilesOverlay espera
                                     val tileProvider = MapTileProviderArray(
-                                        TileSourceFactory.DEFAULT_TILE_SOURCE,
+                                        tileSource,  // Usar el mismo TileSource aquí también
                                         SimpleRegisterReceiver(context),
                                         arrayOf<MapTileModuleProviderBase>(moduleProvider)
                                     )
+                                    
+                                    Timber.d("✅ TileProvider creado para: ${layer.name}")
                                     
                                     // Crear el overlay con el provider
                                     val overlay = TilesOverlay(tileProvider, context)
@@ -173,12 +193,18 @@ fun MapScreen() {
                                     mbtilesOverlays[layer.id] = overlay
                                     map.invalidate()
                                     
-                                    Timber.d("Overlay MBTiles creado: ${layer.name} desde ${file.name}")
+                                    Timber.d("✅✅✅ Overlay MBTiles creado exitosamente: ${layer.name}")
+                                    Timber.d("   - Archivo: ${file.name}")
+                                    Timber.d("   - TileSource: ${tileSource.name()}")
+                                    Timber.d("   - Formato: ${metadata["format"] ?: "desconocido"}")
+                                    Timber.d("   - Zoom: ${metadata["minzoom"]}-${metadata["maxzoom"]}")
+                                    Timber.d("   - Total overlays activos: ${mbtilesOverlays.size}")
                                 } else {
-                                    Timber.w("No se pudo abrir archivo MBTiles: ${file.name}")
+                                    Timber.w("❌ No se pudo abrir archivo MBTiles: ${file.name}")
                                 }
                             } catch (e: Exception) {
-                                Timber.e(e, "Error al crear overlay MBTiles: ${layer.name}")
+                                Timber.e(e, "❌ Error al crear overlay MBTiles: ${layer.name}")
+                                Timber.e("Stacktrace:", e)
                             }
                         }
                     } else {
@@ -198,11 +224,10 @@ fun MapScreen() {
     }
 
     Scaffold(
+        // Solo el botón de "Mi Ubicación" a la derecha
         floatingActionButton = {
-            MapFloatingButtons(
-                onZoomIn = { viewModel.zoomIn() },
-                onZoomOut = { viewModel.zoomOut() },
-                onMyLocation = {
+            FloatingActionButton(
+                onClick = {
                     if (locationPermissions.allPermissionsGranted) {
                         viewModel.setMyLocationEnabled(true)
                         viewModel.centerOnMyLocation()
@@ -210,8 +235,17 @@ fun MapScreen() {
                         locationPermissions.launchMultiplePermissionRequest()
                     }
                 },
-                isMyLocationEnabled = uiState.isMyLocationEnabled
-            )
+                containerColor = if (uiState.isMyLocationEnabled) 
+                    MaterialTheme.colorScheme.primary 
+                else 
+                    MaterialTheme.colorScheme.surface,
+                modifier = Modifier.padding(bottom = 100.dp)  // Para que no se superponga con coordenadas
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "Mi ubicación"
+                )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -228,9 +262,14 @@ fun MapScreen() {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
                         
-                        // Configurar límites de zoom para permitir máximo zoom
+                        // DESHABILITAR los botones nativos de zoom (blancos)
+                        // que aparecen al tocar la pantalla
+                        setBuiltInZoomControls(false)
+                        
+                        // Configurar límites de zoom
+                        // Aumentado a 28 para soportar MBTiles con más detalle
                         minZoomLevel = Constants.Map.MIN_ZOOM
-                        maxZoomLevel = Constants.Map.MAX_ZOOM
+                        maxZoomLevel = 28.0  // Zoom máximo aumentado para MBTiles
                         
                         // Configurar el controlador del mapa
                         controller.setZoom(uiState.zoom)
@@ -262,9 +301,73 @@ fun MapScreen() {
                     }
                 },
                 update = { view ->
+                    // Listener para actualizar coordenadas cuando el mapa se mueve
+                    view.addMapListener(object : org.osmdroid.events.MapListener {
+                        override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
+                            val newCenter = view.mapCenter as GeoPoint
+                            viewModel.updateMapCenter(newCenter)
+                            return true
+                        }
+                        
+                        override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean {
+                            event?.let {
+                                viewModel.updateMapZoom(it.zoomLevel)
+                            }
+                            return true
+                        }
+                    })
+                    
                     // Actualizar el mapa si es necesario
                     view.invalidate()
                 }
+            )
+
+            // Botones de Zoom (encima de las coordenadas al fondo)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                    .height(48.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Botón Zoom Out
+                FloatingActionButton(
+                    onClick = { viewModel.zoomOut() },
+                    modifier = Modifier.size(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Disminuir zoom",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // Botón Zoom In
+                FloatingActionButton(
+                    onClick = { viewModel.zoomIn() },
+                    modifier = Modifier.size(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar zoom",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            // Display de coordenadas (esquina inferior izquierda)
+            // Posicionado DEBAJO de los botones de zoom
+            CoordinateDisplay(
+                center = uiState.center,
+                zoomLevel = uiState.zoom.toInt(),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 70.dp)  // Encima de botones
             )
 
             // Indicador de capas activas (esquina superior izquierda)
@@ -347,59 +450,6 @@ fun MapScreen() {
             
             mapView?.onDetach()
             Timber.d("MapView y overlays liberados")
-        }
-    }
-}
-
-/**
- * Botones flotantes para controlar el mapa.
- */
-@Composable
-fun MapFloatingButtons(
-    onZoomIn: () -> Unit,
-    onZoomOut: () -> Unit,
-    onMyLocation: () -> Unit,
-    isMyLocationEnabled: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Botón de Mi Ubicación
-        FloatingActionButton(
-            onClick = onMyLocation,
-            containerColor = if (isMyLocationEnabled) 
-                MaterialTheme.colorScheme.primary 
-            else 
-                MaterialTheme.colorScheme.surface
-        ) {
-            Icon(
-                imageVector = Icons.Default.MyLocation,
-                contentDescription = "Mi ubicación"
-            )
-        }
-
-        // Botón Zoom In
-        FloatingActionButton(
-            onClick = onZoomIn,
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Aumentar zoom"
-            )
-        }
-
-        // Botón Zoom Out
-        FloatingActionButton(
-            onClick = onZoomOut,
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Icon(
-                imageVector = Icons.Default.Remove,
-                contentDescription = "Disminuir zoom"
-            )
         }
     }
 }

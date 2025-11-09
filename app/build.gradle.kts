@@ -86,6 +86,7 @@ dependencies {
     ksp(libs.roomCompiler)
 
     implementation(libs.sqliteKtx)
+    // implementation(libs.sqliteJdbc) // No funciona en Android - usar android.database.sqlite
 
     implementation(libs.postgresql)
 

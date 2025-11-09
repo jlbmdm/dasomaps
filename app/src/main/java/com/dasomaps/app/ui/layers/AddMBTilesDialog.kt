@@ -1,5 +1,8 @@
 package com.dasomaps.app.ui.layers
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -42,6 +45,21 @@ fun AddMBTilesDialog(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var layerName by remember { mutableStateOf("") }
+    var originalFileName by remember { mutableStateOf("") }
+
+    // Función auxiliar para obtener el nombre del archivo desde una URI
+    fun getFileNameFromUri(uri: Uri, contentResolver: ContentResolver): String {
+        var fileName = "unknown.mbtiles"
+        
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) {
+                fileName = cursor.getString(nameIndex)
+            }
+        }
+        
+        return fileName
+    }
 
     // Lanzador para seleccionar archivo del sistema
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -49,29 +67,56 @@ fun AddMBTilesDialog(
     ) { uri ->
         uri?.let {
             try {
+                // Obtener el nombre original del archivo
+                originalFileName = getFileNameFromUri(uri, context.contentResolver)
+                Timber.d("Archivo seleccionado: $originalFileName")
+                
                 // Copiar el archivo seleccionado al directorio de la app
                 // Esto es necesario porque la URI puede no ser accesible permanentemente
                 val inputStream = context.contentResolver.openInputStream(uri)
+                
+                if (inputStream == null) {
+                    errorMessage = "No se puede leer el archivo seleccionado"
+                    Timber.e("InputStream es null para URI: $uri")
+                    return@rememberLauncherForActivityResult
+                }
+                
                 // Generar nombre temporal único para evitar conflictos
                 val tempFileName = "imported_${System.currentTimeMillis()}.mbtiles"
                 val targetFile = File(context.filesDir, tempFileName)
                 
-                inputStream?.use { input ->
+                var bytesCopied = 0L
+                inputStream.use { input ->
                     targetFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        bytesCopied = input.copyTo(output)
                     }
                 }
                 
+                Timber.d("Archivo copiado: $bytesCopied bytes a ${targetFile.absolutePath}")
+                
+                // Verificar que el archivo copiado no esté vacío
+                if (targetFile.length() == 0L) {
+                    targetFile.delete()
+                    errorMessage = "El archivo copiado está vacío. Intenta de nuevo."
+                    Timber.e("Archivo copiado está vacío")
+                    return@rememberLauncherForActivityResult
+                }
+                
+                // Validar el archivo copiado
                 if (MBTilesManager.isValidMBTiles(targetFile)) {
                     selectedFile = targetFile
-                    // Sugerir un nombre amigable para la capa
-                    layerName = "Capa importada ${System.currentTimeMillis() % 100000}"
+                    // Usar el nombre original del archivo (sin extensión) como nombre de capa
+                    layerName = originalFileName.removeSuffix(".mbtiles").removeSuffix(".MBTILES")
                     errorMessage = null
-                    Timber.d("Archivo MBTiles importado: ${targetFile.absolutePath}")
+                    Timber.d("Archivo MBTiles importado: ${targetFile.absolutePath}, nombre sugerido: $layerName")
                 } else {
                     targetFile.delete()
-                    errorMessage = "El archivo seleccionado no es un MBTiles válido"
-                    Timber.w("Archivo importado no es MBTiles válido")
+                    errorMessage = "El archivo '$originalFileName' está corrupto o no es un MBTiles válido. " +
+                                 "Intenta:\n" +
+                                 "1. Redownload el archivo\n" +
+                                 "2. Verifica con una herramienta como QGIS\n" +
+                                 "3. Genera un nuevo MBTiles"
+                    Timber.w("Archivo importado no es MBTiles válido o está corrupto")
                 }
             } catch (e: Exception) {
                 errorMessage = "Error al importar archivo: ${e.message}"
@@ -186,7 +231,7 @@ fun AddMBTilesDialog(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = file.name,
+                                    text = originalFileName.ifEmpty { file.name },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                                 )
@@ -274,6 +319,7 @@ fun AddMBTilesDialog(
                                     file = file,
                                     onClick = {
                                         selectedFile = file
+                                        originalFileName = file.name
                                         // Usar el nombre del archivo sin extensión como nombre de capa por defecto
                                         layerName = file.nameWithoutExtension
                                         errorMessage = null
@@ -290,7 +336,9 @@ fun AddMBTilesDialog(
                 onClick = {
                     selectedFile?.let { file ->
                         // Usar el nombre personalizado o el nombre del archivo si está vacío
-                        val finalName = layerName.trim().ifEmpty { file.nameWithoutExtension }
+                        val finalName = layerName.trim().ifEmpty { 
+                            originalFileName.ifEmpty { file.nameWithoutExtension }
+                        }
                         
                         val layer = Layer(
                             id = UUID.randomUUID().toString(),
@@ -302,6 +350,7 @@ fun AddMBTilesDialog(
                             syncStatus = SyncStatus.LOCAL_ONLY
                         )
                         onLayerAdded(layer)
+                        Timber.d("Capa añadida: $finalName en ${file.absolutePath}")
                         onDismiss()
                     }
                 },
@@ -326,10 +375,20 @@ private fun MBTilesFileItem(
     file: File,
     onClick: () -> Unit
 ) {
+    val info = MBTilesManager.getMBTilesInfo(file)
+    val isCorrupted = info?.get("isCorrupted")?.toBoolean() ?: false
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick, enabled = !isCorrupted),
+        colors = if (isCorrupted) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier
@@ -341,22 +400,61 @@ private fun MBTilesFileItem(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = MBTilesManager.getMBTilesInfo(file)?.get("size") ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isCorrupted) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = info?.get("size") ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    if (isCorrupted) {
+                        Text(
+                            text = "• CORRUPTO",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                    }
+                }
+                
+                if (isCorrupted) {
+                    Text(
+                        text = "Este archivo no se puede usar. La base de datos está dañada.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = if (isCorrupted) Icons.Default.Error else Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (isCorrupted) 
+                    MaterialTheme.colorScheme.error 
+                else 
+                    MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

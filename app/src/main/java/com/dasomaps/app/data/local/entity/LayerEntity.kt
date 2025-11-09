@@ -21,6 +21,8 @@ data class LayerEntity(
     
     val opacity: Float = 1.0f,
     
+    val zIndex: Int = 0,
+    
     val localPath: String? = null,
     
     val remoteUrl: String? = null,

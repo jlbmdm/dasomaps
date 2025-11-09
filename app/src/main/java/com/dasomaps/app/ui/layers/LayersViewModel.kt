@@ -16,12 +16,20 @@ import timber.log.Timber
  * @property isLoading Si está cargando datos
  * @property errorMessage Mensaje de error si existe
  * @property filterType Filtro de tipo de capa activo
+ * @property searchQuery Texto de búsqueda actual
+ * @property isReorderMode Si está en modo reordenamiento
+ * @property lastAddedLayer Última capa añadida (para mostrar diálogo de información)
+ * @property showLayerInfoDialog Si se debe mostrar el diálogo de información de capa
  */
 data class LayersUiState(
     val layers: List<Layer> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val filterType: LayerType? = null
+    val filterType: LayerType? = null,
+    val searchQuery: String = "",
+    val isReorderMode: Boolean = false,
+    val lastAddedLayer: Layer? = null,
+    val showLayerInfoDialog: Boolean = false
 )
 
 /**
@@ -122,7 +130,7 @@ class LayersViewModel(
     }
 
     /**
-     * Añade una nueva capa.
+     * Añade una nueva capa y muestra el diálogo de información.
      *
      * @param layer Capa a añadir
      */
@@ -130,12 +138,29 @@ class LayersViewModel(
         viewModelScope.launch {
             try {
                 layerRepository.addLayer(layer)
+                
+                // Actualizar estado para mostrar diálogo
+                _uiState.value = _uiState.value.copy(
+                    lastAddedLayer = layer,
+                    showLayerInfoDialog = true
+                )
+                
                 Timber.d("Nueva capa añadida: ${layer.name}")
             } catch (e: Exception) {
                 showError("Error al añadir capa: ${e.message}")
                 Timber.e(e, "Error al añadir capa")
             }
         }
+    }
+
+    /**
+     * Cierra el diálogo de información de capa.
+     */
+    fun dismissLayerInfoDialog() {
+        _uiState.value = _uiState.value.copy(
+            showLayerInfoDialog = false,
+            lastAddedLayer = null
+        )
     }
 
     /**
@@ -211,6 +236,59 @@ class LayersViewModel(
      */
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    /**
+     * Actualiza la consulta de búsqueda y filtra las capas.
+     *
+     * @param query Texto de búsqueda
+     */
+    fun updateSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+        Timber.d("Consulta de búsqueda actualizada: $query")
+    }
+
+    /**
+     * Obtiene las capas filtradas por tipo y búsqueda.
+     */
+    fun getFilteredLayers(): List<Layer> {
+        val layers = _uiState.value.layers
+        val query = _uiState.value.searchQuery.lowercase().trim()
+        
+        return if (query.isEmpty()) {
+            layers
+        } else {
+            layers.filter { layer ->
+                layer.name.lowercase().contains(query) ||
+                layer.localPath?.lowercase()?.contains(query) == true
+            }
+        }
+    }
+
+    /**
+     * Activa o desactiva el modo reordenamiento.
+     */
+    fun toggleReorderMode() {
+        val newMode = !_uiState.value.isReorderMode
+        _uiState.value = _uiState.value.copy(isReorderMode = newMode)
+        Timber.d("Modo reordenamiento: $newMode")
+    }
+
+    /**
+     * Reordena las capas según una nueva lista ordenada.
+     *
+     * @param reorderedLayers Lista de capas en el nuevo orden
+     */
+    fun reorderLayers(reorderedLayers: List<Layer>) {
+        viewModelScope.launch {
+            try {
+                layerRepository.reorderLayers(reorderedLayers)
+                Timber.d("Capas reordenadas exitosamente")
+            } catch (e: Exception) {
+                showError("Error al reordenar capas: ${e.message}")
+                Timber.e(e, "Error al reordenar capas")
+            }
+        }
     }
 
     override fun onCleared() {

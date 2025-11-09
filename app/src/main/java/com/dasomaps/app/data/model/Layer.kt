@@ -45,6 +45,7 @@ enum class SyncStatus {
  * @property type Tipo de capa
  * @property isVisible Si la capa está actualmente visible en el mapa
  * @property opacity Opacidad de la capa (0.0 a 1.0)
+ * @property zIndex Índice de orden de la capa (mayor = más arriba)
  * @property localPath Ruta local del archivo (si está en cache)
  * @property remoteUrl URL remota del servidor (si aplica)
  * @property syncStatus Estado de sincronización
@@ -59,6 +60,7 @@ data class Layer(
     val type: LayerType,
     val isVisible: Boolean = true,
     val opacity: Float = 1.0f,
+    val zIndex: Int = 0,
     val localPath: String? = null,
     val remoteUrl: String? = null,
     val syncStatus: SyncStatus = SyncStatus.LOCAL_ONLY,

@@ -22,7 +22,7 @@ import com.dasomaps.app.data.local.entity.LayerEntity
         LayerEntity::class,
         GeometryEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class DasoMapsDatabase : RoomDatabase() {
