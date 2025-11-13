@@ -102,13 +102,51 @@ class WMTSTileSource(
             append("&LAYER=$layer")
             style?.let { append("&STYLE=$it") }
             append("&TILEMATRIXSET=$tileMatrixSet")
-            append("&TILEMATRIX=$tileMatrixSet:$z") // 👈 cambio clave
+//            append("&TILEMATRIX=$tileMatrixSet:$z") // 👈 cambio clave
+            append("&TILEMATRIX=$z")
             append("&TILEROW=$y")
             append("&TILECOL=$x")
             append("&FORMAT=$format")
         }
     }
 }
+
+
+class WMTSTileSource2(
+    name: String,
+    private val baseUrl: String,
+    private val layer: String,
+    private val tileMatrixSet: String,
+    private val format: String
+) : OnlineTileSourceBase(
+    name,
+    0,
+    19,
+    256,
+    ".jpg",
+    arrayOf(baseUrl)
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+
+        // GeoServer WMTS usa el identificador completo en TILEMATRIX
+        val tileMatrix = if (tileMatrixSet.startsWith("EPSG:"))
+            "${tileMatrixSet}:$zoom"
+        else
+            zoom.toString()
+
+        return "$baseUrl?" +
+                "SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&" +
+                "LAYER=$layer&" +
+                "TILEMATRIXSET=$tileMatrixSet&" +
+                "TILEMATRIX=$tileMatrix&" +
+                "TILEROW=$y&TILECOL=$x&" +
+                "FORMAT=$format"
+    }
+}
+
 
 //Esto ya no lo uso:
 /*
@@ -289,24 +327,25 @@ private val itacylOrtoTileSource = WMTSTileSource(
 )
 
 // WMTS - Ortoimagen 2020-2021 Castilla y León (IDEcyl)
-private val idecylOrto2020TileSource = WMTSTileSource(
+private val idecylOrto2020TileSource = WMTSTileSource2(
     name = "IDECyL_Orto2020",
     baseUrl = "https://idecyl.jcyl.es/geoserver/oi/gwc/service/wmts",
     layer = "oi_2020_cyl",
     tileMatrixSet = "EPSG:900913",
     format = "image/jpeg",
-    style = null   // 👈 no incluir STYLE
+//    style = null   // 👈 no incluir STYLE
 )
 
-private val idecylTopoTileSource = WMTSTileSource(
+/*
+private val idecylTopoTileSource = WMTSTileSource2(
     name = "MapaCyL",
     baseUrl = "https://idecyl.jcyl.es/geoserver/mapacyl/gwc/service/wmts",
     layer = "MapaCyL",
     tileMatrixSet = "EPSG:900913",
     format = "image/jpeg",
-    style = null   // 👈 no incluir STYLE
+//    style = null   // 👈 no incluir STYLE
 )
-
+*/
 
 /**
  * Pantalla principal del mapa.
@@ -367,7 +406,7 @@ fun MapScreen() {
 //            BaseMapType.IGN_LIDAR -> ignLidarTileSource // Descomentar tb en MapUiState.kt
 //            BaseMapType.ITACYL_ORTO -> itacylOrtoTileSource // Descomentar tb en MapUiState.kt
             BaseMapType.IDECYL_ORTO -> idecylOrto2020TileSource // Descomentar tb en MapUiState.kt
-            BaseMapType.IDECYL_TOPO -> idecylTopoTileSource // Descomentar tb en MapUiState.kt
+//            BaseMapType.IDECYL_TOPO -> idecylTopoTileSource // Descomentar tb en MapUiState.kt
         }
         mapView?.setTileSource(newTileSource)
         Timber.d("Cambiando mapa base a: ${newTileSource.name()}")
@@ -710,7 +749,7 @@ private fun getBaseMapName(baseMapType: BaseMapType): String {
 //        BaseMapType.IGN_LIDAR -> "LiDAR (IGN)"
 //        BaseMapType.ITACYL_ORTO -> "Ortofotos (ITACyL)"
         BaseMapType.IDECYL_ORTO -> "Ortofotos (IDECyL)"
-        BaseMapType.IDECYL_TOPO -> "Topográfico (IDECyL)"
+//        BaseMapType.IDECYL_TOPO -> "Topográfico (IDECyL)"
     }
 }
 

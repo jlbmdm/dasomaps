@@ -19,7 +19,7 @@ enum class BaseMapType {
 //    IGN_LIDAR,    // IGN LiDAR (Modelo Digital de Superficies) // Descomentar tb en MapScreen.kt
 //    ITACYL_ORTO,  // Ortofoto de ITACyL (WMS) // Descomentar tb en MapScreen.kt
     IDECYL_ORTO,  // Ortofoto de IDECyL // Descomentar tb en MapScreen.kt
-    IDECYL_TOPO   // Topográfico de IDECyL // Descomentar tb en MapScreen.kt
+//    IDECYL_TOPO   // Topográfico de IDECyL // Descomentar tb en MapScreen.kt
 }
 
 /**
