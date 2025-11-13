@@ -2,17 +2,17 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kotlinCompose)
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21"
+    alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "com.dasomaps.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.dasomaps.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -101,6 +101,11 @@ dependencies {
     implementation(libs.timber)
 
     implementation(libs.datastorePreferences)
+
+    // Lectura de archivos TIFF/GeoTIFF
+    implementation(libs.twelvemonkeysTiff)
+    implementation(libs.twelvemonkeysCore)
+    implementation(libs.commonsImaging)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutinesTest)

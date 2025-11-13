@@ -1,68 +1,334 @@
 package com.dasomaps.app.ui.map
 
 import android.Manifest
+import android.graphics.Color as AndroidColor
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.dasomaps.app.data.local.DasoMapsDatabase
 import com.dasomaps.app.data.model.LayerType
-import com.dasomaps.app.data.model.LocationState
 import com.dasomaps.app.data.repository.LayerRepository
+import com.dasomaps.app.data.repository.RasterRepository
 import com.dasomaps.app.ui.components.CoordinateDisplay
 import com.dasomaps.app.utils.Constants
+import com.dasomaps.app.utils.CoordinateUtils
+import com.dasomaps.app.utils.MBTilesUpscalingProvider
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import kotlinx.coroutines.delay
 import org.osmdroid.tileprovider.MapTileProviderArray
 import org.osmdroid.tileprovider.modules.ArchiveFileFactory
 import org.osmdroid.tileprovider.modules.MapTileFileArchiveProvider
 import org.osmdroid.tileprovider.modules.MapTileModuleProviderBase
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
+import org.osmdroid.util.TileSystem
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-import org.osmdroid.views.overlay.ScaleBarOverlay
 import timber.log.Timber
 import java.io.File
 
+// =================================================================================
+// DEFINICIÓN DE MAPAS BASE PERSONALIZADOS
+// =================================================================================
+
+/**
+ * Clase auxiliar para Tile Sources que usan el formato de URL Z/Y/X en lugar del estándar Z/X/Y.
+ */
+class YXTileSource(
+    name: String, minZoom: Int, maxZoom: Int, tileSize: Int, imageFilenameEnding: String,
+    baseUrls: Array<String>, copyright: String
+) : XYTileSource(name, minZoom, maxZoom, tileSize, imageFilenameEnding, baseUrls, copyright) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        return baseUrl + MapTileIndex.getZoom(pMapTileIndex) + "/" + MapTileIndex.getY(pMapTileIndex) + "/" + MapTileIndex.getX(pMapTileIndex) + mImageFilenameEnding
+    }
+}
+
+/**
+ * Fuente de teselas para servicios WMTS estándar (KVP, no RESTful).
+ * Permite construir URL del tipo:
+ * ?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=...&STYLE=...&TILEMATRIXSET=...&TILEMATRIX=...&TILEROW=...&TILECOL=...&FORMAT=...
+ *
+ * Si [style] es null, se omite completamente el parámetro STYLE.
+ */
+class WMTSTileSource(
+    name: String,
+    baseUrl: String,
+    private val layer: String,
+    private val tileMatrixSet: String,
+    private val format: String,
+    private val style: String? = null
+) : OnlineTileSourceBase(name, 0, 20, 256, ".jpeg", arrayOf(baseUrl), "") {
+
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val z = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+
+        return buildString {
+            append(baseUrl)
+            if (!baseUrl.contains("?")) append("?") else append("&")
+            append("SERVICE=WMTS")
+            append("&REQUEST=GetTile")
+            append("&VERSION=1.0.0")
+            append("&LAYER=$layer")
+            style?.let { append("&STYLE=$it") }
+            append("&TILEMATRIXSET=$tileMatrixSet")
+            append("&TILEMATRIX=$tileMatrixSet:$z") // 👈 cambio clave
+            append("&TILEROW=$y")
+            append("&TILECOL=$x")
+            append("&FORMAT=$format")
+        }
+    }
+}
+
+//Esto ya no lo uso:
+/*
+// IGN WMTS - Mapa Rasterizado (MTN)
+class IGNMTNTileSource : OnlineTileSourceBase(
+    "IGN_MTNRaster",
+    0, 20, 256, ".jpeg",
+    arrayOf("https://www.ign.es/wmts/mapa-raster/")
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTile.getZoom(pMapTileIndex)
+        val x = MapTile.getX(pMapTileIndex)
+        val y = MapTile.getY(pMapTileIndex)
+
+        // Construcción URL según especificación WMTS (KVP)
+        // Ejemplo válido:
+        // https://www.ign.es/wmts/mapa-raster?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0
+        // &LAYER=MTN&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible
+        // &TILEMATRIX=14&TILEROW=7977&TILECOL=6105&FORMAT=image/jpeg
+        return "https://www.ign.es/wmts/mapa-raster?" +
+                "SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+                "&LAYER=MTN&STYLE=default" +
+                "&TILEMATRIXSET=GoogleMapsCompatible" +
+                "&TILEMATRIX=$zoom&TILEROW=$y&TILECOL=$x" +
+                "&FORMAT=image/jpeg"
+    }
+}
+*/
+
+/**
+ * Clase auxiliar para servicios WMS. Construye la URL con el BBOX requerido.
+ */
+class WMSTileSource(name: String, baseUrl: String, version: String, layers: String, format: String) :
+    OnlineTileSourceBase(name, 0, 20, 256, ".png", arrayOf(baseUrl), "") {
+    private val mVersion = version
+    private val mLayers = layers
+    private val mFormat = format
+
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+
+        val tileSystem = MapView.getTileSystem()
+        
+        // Convertir coordenadas de tesela a lat/lon
+        val lonWest = tileSystem.getLongitudeFromTileX(x, zoom)
+        val lonEast = tileSystem.getLongitudeFromTileX(x + 1, zoom)
+        val latNorth = tileSystem.getLatitudeFromTileY(y, zoom)
+        val latSouth = tileSystem.getLatitudeFromTileY(y + 1, zoom)
+
+        val url = StringBuilder(baseUrl)
+        url.append("?SERVICE=WMS")
+        url.append("&VERSION=$mVersion")
+        url.append("&REQUEST=GetMap")
+        url.append("&LAYERS=$mLayers")
+        url.append("&FORMAT=$mFormat")
+        url.append("&BBOX=$lonWest,$latSouth,$lonEast,$latNorth")
+        url.append("&WIDTH=${tileSizePixels}")
+        url.append("&HEIGHT=${tileSizePixels}")
+        url.append("&SRS=EPSG:3857")
+        url.append("&STYLES=")
+        url.append("&TRANSPARENT=TRUE")
+
+        return url.toString()
+    }
+}
+
+// --- Mapas Base ----
+
+// Formato Z/Y/X
+private val esriSatelliteTileSource = YXTileSource(
+    "EsriWorldImagery", 0, 19, 256, ".jpg",
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
+    "© Esri, et al."
+)
+
+// wmts del IGN: Formato wmts
+// Para wmts o wms no debe usarse el Formato Z/X/Y (Estándar) xq no es RESTful tipo /Z/X/Y.jpeg
+// Ejemplo RESTfun Z/X/Y: https://www.ign.es/wmts/ign-base/ign-base/default/EPSG:3857/14/7978/6105.jpeg
+/*
+// Formato Z/X/Y (Estándar)
+private val ignBaseTileSource = XYTileSource(
+    "IGNBase", 0, 20, 256, ".jpeg",
+    arrayOf("https://www.ign.es/wmts/ign-base/ign-base/default/EPSG:3857/"),
+    "© IGN"
+)
+*/
+
+/*
+Lo correcto es usar los con parámetros GetTile, que se pide así:
+https://www.ign.es/wmts/ign-base?
+    SERVICE=WMTS&
+    REQUEST=GetTile&
+    VERSION=1.0.0&
+    LAYER=ign-base&
+    TILEMATRIXSET=GoogleMapsCompatible&
+    TILEMATRIX=14&
+    TILEROW=6105&
+    TILECOL=7978&
+    FORMAT=image/jpeg
+*/
+private val ignBaseTodoTileSource = WMTSTileSource(
+    name = "IGNBaseTodo",
+    baseUrl = "https://www.ign.es/wmts/ign-base",
+    layer = "IGNBaseTodo",
+    tileMatrixSet = "GoogleMapsCompatible",
+    format = "image/jpeg",
+    style = "default"
+)
+
+// wmts del IGN: Formato wmts
+// Versión incorrecta:
+/*
+// Formato Z/X/Y (Estándar) ->> No funciona
+private val ignRasterTileSource = XYTileSource(
+    "IGNRaster", 0, 20, 256, ".jpeg",
+    arrayOf("https://www.ign.es/wmts/mapa-raster/mapa-raster/default/EPSG:3857/"),
+    "© IGN"
+)
+*/
+// Versión correcta:
+// IGN - Mapas ráster del IGN (MTN)
+private val ignMtnTileSource = WMTSTileSource(
+    name = "IGNMTN",
+    baseUrl = "https://www.ign.es/wmts/mapa-raster",
+    layer = "MTN",
+    tileMatrixSet = "GoogleMapsCompatible",
+    format = "image/jpeg",
+    style = "default"
+)
+
+// WMTS - Imágenes de satélite Sentinel y ortofotos PNOA (OI.orthoimageCoverage)
+private val ignPnoaTileSource = WMTSTileSource(
+    name = "IGN_PNOA",
+    baseUrl = "https://www.ign.es/wmts/pnoa-ma",
+    layer = "OI.OrthoimageCoverage",
+    tileMatrixSet = "GoogleMapsCompatible",
+    format = "image/jpeg",
+    style = "default"
+)
+
+private val ignMdtTileSource = WMTSTileSource(
+    "IGN_MDT",
+    "https://servicios.idee.es/wmts/mdt",
+    "EL.ElevationGridCoverage",
+    "GoogleMapsCompatible",  //  Verificado con https://www.ign.es/wmts/mapa-raster?request=GetCapabilities&service=WMTS que usa GoogleMapsCompatible
+    "image/jpeg",
+    style = "default"
+)
+
+private val ignRelieveTileSource = WMTSTileSource(
+    "Relieve",
+    "https://servicios.idee.es/wmts/mdt",
+    "Relieve",
+    "GoogleMapsCompatible",  //  Verificado con https://www.ign.es/wmts/mapa-raster?request=GetCapabilities&service=WMTS que usa GoogleMapsCompatible
+    "image/jpeg",
+    style = "default"
+)
+// No disponible:
+/*
+private val ignLidarTileSource = WMTSTileSource(
+    "IGNLidar",
+    "https://www.ign.es/wmts/lidar/LIDAR",
+    "MapaLidar-IGN",
+    "GoogleMapsCompatible",  //  Verificado con https://www.ign.es/wmts/mapa-raster?request=GetCapabilities&service=WMTS que usa GoogleMapsCompatible
+    "image/jpeg"
+)
+*/
+
+private val itacylOrtoTileSource = WMTSTileSource(
+    "Ortofoto-ITACYL",
+    "https://orto.wms.itacyl.es/WMS",
+    "Ortofoto-ITACYL",
+    "GoogleMapsCompatible",  //  Verificado con https://www.ign.es/wmts/mapa-raster?request=GetCapabilities&service=WMTS que usa GoogleMapsCompatible
+    "image/jpeg",
+    style = "default"
+)
+
+// WMTS - Ortoimagen 2020-2021 Castilla y León (IDEcyl)
+private val idecylOrto2020TileSource = WMTSTileSource(
+    name = "IDECyL_Orto2020",
+    baseUrl = "https://idecyl.jcyl.es/geoserver/oi/gwc/service/wmts",
+    layer = "oi_2020_cyl",
+    tileMatrixSet = "EPSG:900913",
+    format = "image/jpeg",
+    style = null   // 👈 no incluir STYLE
+)
+
+private val idecylTopoTileSource = WMTSTileSource(
+    name = "MapaCyL",
+    baseUrl = "https://idecyl.jcyl.es/geoserver/mapacyl/gwc/service/wmts",
+    layer = "MapaCyL",
+    tileMatrixSet = "EPSG:900913",
+    format = "image/jpeg",
+    style = null   // 👈 no incluir STYLE
+)
+
+
 /**
  * Pantalla principal del mapa.
- * 
- * Muestra un mapa interactivo con osmdroid y controles para:
- * - Zoom in/out (botones al fondo, encima de coordenadas)
- * - Centrar en ubicación del usuario (botón en esquina derecha)
- * - Visualización de capas MBTiles con opacidad
- * - Barra de escala en la parte inferior
- * - Coordenadas en dos cajas horizontales con escala en número
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun MapScreen() {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val database = remember { DasoMapsDatabase.getInstance(context) }
-    val repository = remember { LayerRepository(database.layerDao()) }
-    val viewModel = remember { MapViewModel(repository) }
-    
+    val layerRepository = remember { LayerRepository(database.layerDao()) }
+    val rasterRepository = remember { RasterRepository(context) }
+    val viewModel = remember { MapViewModel(context, layerRepository, rasterRepository) }
+
     val uiState by viewModel.uiState.collectAsState()
 
-    // Estado para mantener referencia al MapView
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var myLocationOverlay by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
-    var scaleBarOverlay by remember { mutableStateOf<ScaleBarOverlay?>(null) }
-    
-    // Mapa de overlays de MBTiles (layerId -> TilesOverlay)
+    var showBaseMapDialog by remember { mutableStateOf(false) }
+
     val mbtilesOverlays = remember { mutableMapOf<String, TilesOverlay>() }
 
-    // Gestión de permisos de ubicación
     val locationPermissions = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -70,393 +336,384 @@ fun MapScreen() {
         )
     )
 
-    // Efecto para actualizar el centro del mapa cuando cambia en el ViewModel
-    LaunchedEffect(uiState.center) {
-        mapView?.controller?.setCenter(uiState.center)
+    var showZoomButtons by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showZoomButtons) {
+        if (showZoomButtons) {
+            delay(5000)  // 5 segundos
+            showZoomButtons = false
+        }
     }
 
-    // Efecto para actualizar el zoom cuando cambia en el ViewModel
-    LaunchedEffect(uiState.zoom) {
-        mapView?.controller?.setZoom(uiState.zoom)
+//    // Efectos para actualizar la cámara del mapa
+//    LaunchedEffect(uiState.center) {
+//        mapView?.controller?.setCenter(uiState.center)
+//    }
+//    LaunchedEffect(uiState.zoom) {
+//        mapView?.controller?.setZoom(uiState.zoom)
+//    }
+
+    // Efecto para CAMBIAR el mapa base
+    LaunchedEffect(uiState.baseMapType) {
+        val newTileSource = when (uiState.baseMapType) {
+            BaseMapType.STREET -> TileSourceFactory.MAPNIK
+            BaseMapType.TOPO -> TileSourceFactory.OpenTopo
+            BaseMapType.SATELLITE -> esriSatelliteTileSource
+            BaseMapType.IGN_BASE -> ignBaseTodoTileSource
+            BaseMapType.IGN_RASTER -> ignMtnTileSource
+            BaseMapType.IGN_PNOA -> ignPnoaTileSource // Descomentar tb en MapUiState.kt
+//            BaseMapType.IGN_MDT -> ignMdtTileSource // Descomentar tb en MapUiState.kt
+//            BaseMapType.IGN_RELIEVE -> ignRelieveTileSource // Descomentar tb en MapUiState.kt
+//            BaseMapType.IGN_LIDAR -> ignLidarTileSource // Descomentar tb en MapUiState.kt
+//            BaseMapType.ITACYL_ORTO -> itacylOrtoTileSource // Descomentar tb en MapUiState.kt
+            BaseMapType.IDECYL_ORTO -> idecylOrto2020TileSource // Descomentar tb en MapUiState.kt
+            BaseMapType.IDECYL_TOPO -> idecylTopoTileSource // Descomentar tb en MapUiState.kt
+        }
+        mapView?.setTileSource(newTileSource)
+        Timber.d("Cambiando mapa base a: ${newTileSource.name()}")
     }
 
-    // Efecto para habilitar/deshabilitar la ubicación del usuario
+    // Efecto para seguimiento de ubicación
+    LaunchedEffect(uiState.isFollowingLocation) {
+        if (uiState.isFollowingLocation) {
+            while (uiState.isFollowingLocation) {
+                myLocationOverlay?.myLocation?.let { myLocation ->
+                    mapView?.controller?.animateTo(GeoPoint(myLocation.latitude, myLocation.longitude))
+                }
+                delay(1000) // Actualizar cada segundo
+            }
+        }
+    }
+
+    // Efecto para habilitar/deshabilitar la capa de ubicación
     LaunchedEffect(uiState.isMyLocationEnabled) {
         myLocationOverlay?.let { overlay ->
             if (uiState.isMyLocationEnabled) {
                 overlay.enableMyLocation()
                 overlay.enableFollowLocation()
-                Timber.d("Ubicación del usuario habilitada")
             } else {
                 overlay.disableMyLocation()
                 overlay.disableFollowLocation()
-                Timber.d("Ubicación del usuario deshabilitada")
             }
         }
     }
 
-    // Efecto para actualizar overlays de capas MBTiles
+    // Efecto para gestionar overlays de capas MBTiles
     LaunchedEffect(uiState.visibleLayers) {
-        Timber.d("=== LaunchedEffect visibleLayers: total capas = ${uiState.visibleLayers.size} ===")
-        uiState.visibleLayers.forEach { layer ->
-            Timber.d("  Capa: ${layer.name}, tipo=${layer.type}, visible=${layer.isVisible}, path=${layer.localPath}")
-        }
-        
         mapView?.let { map ->
-            // Obtener capas MBTiles del estado
             val mbtilesLayers = uiState.visibleLayers.filter { it.type == LayerType.MBTILES }
-            
-            // Obtener IDs actuales y nuevas
             val currentLayerIds = mbtilesOverlays.keys.toSet()
             val newLayerIds = mbtilesLayers.map { it.id }.toSet()
-            
-            // Eliminar overlays de capas que ya no están visibles
-            val layersToRemove = currentLayerIds - newLayerIds
-            layersToRemove.forEach { layerId ->
-                mbtilesOverlays[layerId]?.let { overlay ->
-                    map.overlays.remove(overlay)
-                    mbtilesOverlays.remove(layerId)
-                    Timber.d("Overlay removido: $layerId")
-                }
+
+            // Eliminar overlays que ya no son visibles
+            (currentLayerIds - newLayerIds).forEach { layerId ->
+                mbtilesOverlays.remove(layerId)?.let { map.overlays.remove(it) }
             }
-            
-            // Añadir o actualizar overlays para capas visibles
+
+            // Añadir o actualizar overlays
             mbtilesLayers.forEach { layer ->
-                Timber.d("Procesando capa: ${layer.name}, isVisible=${layer.isVisible}, path=${layer.localPath}")
                 if (layer.isVisible && layer.localPath != null) {
                     val file = File(layer.localPath)
-                    
-                    if (file.exists()) {
-                        Timber.d("Archivo existe: ${file.absolutePath}, tamaño=${file.length()} bytes")
-                        // Si el overlay ya existe, solo actualizar opacidad
-                        val existingOverlay = mbtilesOverlays[layer.id]
-                        if (existingOverlay != null) {
-                            // Actualizar opacidad
-                            existingOverlay.setColorFilter(
-                                android.graphics.PorterDuffColorFilter(
-                                    android.graphics.Color.argb((layer.opacity * 255).toInt(), 255, 255, 255),
-                                    android.graphics.PorterDuff.Mode.DST_IN
-                                )
+                    if (!file.exists()) return@forEach
+
+                    val existingOverlay = mbtilesOverlays[layer.id]
+                    if (existingOverlay != null) {
+                        // Actualizar opacidad
+                        existingOverlay.setColorFilter(
+                            android.graphics.PorterDuffColorFilter(
+                                android.graphics.Color.argb((layer.opacity * 255).toInt(), 255, 255, 255),
+                                android.graphics.PorterDuff.Mode.DST_IN
                             )
-                            map.invalidate()
-                            Timber.d("Opacidad actualizada para: ${layer.name} -> ${layer.opacity}")
-                        } else {
-                            // Crear nuevo overlay
-                            try {
-                                // Leer metadatos del MBTiles
-                                val metadata = com.dasomaps.app.utils.MBTilesManager.readMBTilesMetadata(file)
-                                Timber.d("Metadatos del MBTiles '${layer.name}': $metadata")
-                                
-                                // Crear TileSource personalizado basado en metadatos
-                                val tileSource = com.dasomaps.app.utils.MBTilesManager.createTileSourceFromMBTiles(file, metadata)
-                                
-                                // Abrir el archivo MBTiles usando ArchiveFileFactory
-                                val archiveFile = ArchiveFileFactory.getArchiveFile(file)
-                                if (archiveFile != null) {
-                                    Timber.d("✅ Archivo MBTiles abierto: ${file.name}")
-                                    
-                                    // Crear el módulo provider para el archivo CON EL TILE SOURCE CORRECTO
-                                    val moduleProvider = MapTileFileArchiveProvider(
-                                        SimpleRegisterReceiver(context),
-                                        tileSource,  // Usar el TileSource del MBTiles, NO el default
-                                        arrayOf(archiveFile)
-                                    )
-                                    
-                                    // Envolver el módulo en un MapTileProviderArray
-                                    val tileProvider = MapTileProviderArray(
-                                        tileSource,  // Usar el mismo TileSource aquí también
-                                        SimpleRegisterReceiver(context),
-                                        arrayOf<MapTileModuleProviderBase>(moduleProvider)
-                                    )
-                                    
-                                    Timber.d("✅ TileProvider creado para: ${layer.name}")
-                                    
-                                    // Crear el overlay con el provider
-                                    val overlay = TilesOverlay(tileProvider, context)
-                                    
-                                    // Aplicar opacidad inicial
-                                    overlay.setColorFilter(
-                                        android.graphics.PorterDuffColorFilter(
-                                            android.graphics.Color.argb((layer.opacity * 255).toInt(), 255, 255, 255),
-                                            android.graphics.PorterDuff.Mode.DST_IN
-                                        )
-                                    )
-                                    
-                                    // Añadir al mapa (antes del overlay de ubicación)
-                                    val locationOverlayIndex = map.overlays.indexOfFirst { it is MyLocationNewOverlay }
-                                    if (locationOverlayIndex >= 0) {
-                                        map.overlays.add(locationOverlayIndex, overlay)
-                                    } else {
-                                        map.overlays.add(overlay)
-                                    }
-                                    
-                                    mbtilesOverlays[layer.id] = overlay
-                                    map.invalidate()
-                                    
-                                    Timber.d("✅✅✅ Overlay MBTiles creado exitosamente: ${layer.name}")
-                                    Timber.d("   - Archivo: ${file.name}")
-                                    Timber.d("   - TileSource: ${tileSource.name()}")
-                                    Timber.d("   - Formato: ${metadata["format"] ?: "desconocido"}")
-                                    Timber.d("   - Zoom: ${metadata["minzoom"]}-${metadata["maxzoom"]}")
-                                    Timber.d("   - Total overlays activos: ${mbtilesOverlays.size}")
-                                } else {
-                                    Timber.w("❌ No se pudo abrir archivo MBTiles: ${file.name}")
-                                }
-                            } catch (e: Exception) {
-                                Timber.e(e, "❌ Error al crear overlay MBTiles: ${layer.name}")
-                                Timber.e("Stacktrace:", e)
-                            }
-                        }
+                        )
                     } else {
-                        Timber.w("Archivo MBTiles no existe: ${layer.localPath}")
-                    }
-                } else if (!layer.isVisible) {
-                    // Remover overlay si la capa está oculta
-                    mbtilesOverlays[layer.id]?.let { overlay ->
-                        map.overlays.remove(overlay)
-                        mbtilesOverlays.remove(layer.id)
-                        map.invalidate()
-                        Timber.d("Overlay ocultado: ${layer.name}")
+                        // Crear nuevo overlay
+                        try {
+                            val metadata = com.dasomaps.app.utils.MBTilesManager.readMBTilesMetadata(file)
+                            val tileSource = com.dasomaps.app.utils.MBTilesManager.createTileSourceFromMBTiles(file, metadata)
+                            val archiveFile = ArchiveFileFactory.getArchiveFile(file) ?: return@forEach
+
+                            val moduleProvider = MapTileFileArchiveProvider(SimpleRegisterReceiver(context), tileSource, arrayOf(archiveFile))
+                            val maxZoomInFile = metadata["maxzoom"]?.toString()?.toIntOrNull() ?: 18
+                            val upscalingProvider = MBTilesUpscalingProvider(context, moduleProvider, pMaxZoomWithData = maxZoomInFile)
+                            val tileProvider = MapTileProviderArray(tileSource, SimpleRegisterReceiver(context), arrayOf(upscalingProvider))
+
+                            val overlay = TilesOverlay(tileProvider, context).apply {
+                                loadingBackgroundColor = AndroidColor.TRANSPARENT
+                                setColorFilter(
+                                    android.graphics.PorterDuffColorFilter(
+                                        android.graphics.Color.argb((layer.opacity * 255).toInt(), 255, 255, 255),
+                                        android.graphics.PorterDuff.Mode.DST_IN
+                                    )
+                                )
+                            }
+
+                            val locationOverlayIndex = map.overlays.indexOfFirst { it is MyLocationNewOverlay }
+                            if (locationOverlayIndex >= 0) {
+                                map.overlays.add(locationOverlayIndex, overlay)
+                            } else {
+                                map.overlays.add(overlay)
+                            }
+                            mbtilesOverlays[layer.id] = overlay
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error al crear overlay MBTiles: ${layer.name}")
+                        }
                     }
                 }
             }
+            map.invalidate()
         }
     }
 
-    Scaffold(
-        // Solo el botón de "Mi Ubicación" a la derecha
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    if (locationPermissions.allPermissionsGranted) {
-                        viewModel.setMyLocationEnabled(true)
-                        viewModel.centerOnMyLocation()
-                    } else {
-                        locationPermissions.launchMultiplePermissionRequest()
-                    }
-                },
-                containerColor = if (uiState.isMyLocationEnabled) 
-                    MaterialTheme.colorScheme.primary 
-                else 
-                    MaterialTheme.colorScheme.surface,
-                modifier = Modifier.padding(bottom = 100.dp)  // Para que no se superponga con coordenadas
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MyLocation,
-                    contentDescription = "Mi ubicación"
-                )
-            }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Mapa osmdroid
+    Scaffold { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     MapView(ctx).apply {
-                        // Configuración básica del mapa
-                        setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
-                        
-                        // DESHABILITAR los botones nativos de zoom (blancos)
-                        // que aparecen al tocar la pantalla
-                        setBuiltInZoomControls(false)
-                        
-                        // Configurar límites de zoom
-                        // Aumentado a 28 para soportar MBTiles con más detalle
                         minZoomLevel = Constants.Map.MIN_ZOOM
-                        maxZoomLevel = 28.0  // Zoom máximo aumentado para MBTiles
-                        
-                        // Configurar el controlador del mapa
-                        controller.setZoom(uiState.zoom)
-                        controller.setCenter(uiState.center)
-                        
-                        // Overlay de ubicación del usuario
-                        val locationOverlay = MyLocationNewOverlay(
-                            GpsMyLocationProvider(ctx),
-                            this
-                        )
-                        locationOverlay.enableMyLocation()
-                        overlays.add(locationOverlay)
-                        myLocationOverlay = locationOverlay
-                        
-                        // Overlay de barra de escala (parte inferior)
-                        val scaleBar = ScaleBarOverlay(this)
-                        scaleBar.setCentred(true)
-                        // Posicionar en la parte inferior, centrado
-                        scaleBar.setScaleBarOffset(
-                            (ctx.resources.displayMetrics.widthPixels / 2), 
-                            10  // 10 píxeles desde abajo
-                        )
-                        overlays.add(scaleBar)
-                        scaleBarOverlay = scaleBar
+                        maxZoomLevel = 28.0
+//                        controller.setZoom(uiState.zoom)
+//                        controller.setCenter(uiState.center)
+
+                        // Capa de ubicación
+                        val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).also {
+                            it.enableMyLocation()
+                            overlays.add(it)
+                            myLocationOverlay = it
+                        }
+
+                        // Barra de escala
+                        ScaleBarOverlay(this).also {
+                            it.setCentred(true)
+                            it.setScaleBarOffset(ctx.resources.displayMetrics.widthPixels / 2, 10)
+                            overlays.add(it)
+                        }
                         
                         mapView = this
-                        
-                        Timber.d("MapView creado y configurado con zoom máximo: $maxZoomLevel")
+
+                        // Detector de toques para consulta ráster
+                        this.setOnTouchListener { _, event ->
+                            if (event.action == android.view.MotionEvent.ACTION_DOWN && uiState.isRasterQueryMode) {
+                                val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
+                                viewModel.queryRasterValues(geoPoint.latitude, geoPoint.longitude)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                true
+                            } else false
+                        }
                     }
                 },
                 update = { view ->
-                    // Listener para actualizar coordenadas cuando el mapa se mueve
+                    // Actualizar el centro y el zoom desde el estado
+                    view.controller.setZoom(uiState.zoom)
+                    view.controller.setCenter(uiState.center)
+
+                    // Listener para actualizar el estado cuando el mapa se mueve
                     view.addMapListener(object : org.osmdroid.events.MapListener {
-                        override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
-                            val newCenter = view.mapCenter as GeoPoint
-                            viewModel.updateMapCenter(newCenter)
-                            return true
-                        }
-                        
-                        override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean {
-                            event?.let {
-                                viewModel.updateMapZoom(it.zoomLevel)
-                            }
-                            return true
-                        }
+                        override fun onScroll(event: org.osmdroid.events.ScrollEvent?) = true.also { viewModel.updateMapCenter(view.mapCenter as GeoPoint) }
+                        override fun onZoom(event: org.osmdroid.events.ZoomEvent?) = true.also { event?.let { viewModel.updateMapZoom(it.zoomLevel) } }
                     })
-                    
-                    // Actualizar el mapa si es necesario
                     view.invalidate()
                 }
             )
 
-            // Botones de Zoom (encima de las coordenadas al fondo)
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-                    .height(48.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Botón para cambiar el mapa base
+            FloatingActionButton(
+                onClick = { showBaseMapDialog = true },
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface
             ) {
-                // Botón Zoom Out
-                FloatingActionButton(
-                    onClick = { viewModel.zoomOut() },
-                    modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Remove,
-                        contentDescription = "Disminuir zoom",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(Icons.Default.Map, "Cambiar mapa base")
+            }
 
-                // Botón Zoom In
+            // Botón de modo consulta ráster
+            if (uiState.visibleLayers.any { it.type == LayerType.RASTER && it.isVisible }) {
                 FloatingActionButton(
-                    onClick = { viewModel.zoomIn() },
-                    modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                    onClick = { viewModel.toggleRasterQueryMode() },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 80.dp, end = 16.dp),
+                    containerColor = if (uiState.isRasterQueryMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                    contentColor = if (uiState.isRasterQueryMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Aumentar zoom",
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Icon(Icons.Default.TouchApp, "Consulta ráster")
                 }
             }
 
-            // Display de coordenadas (esquina inferior izquierda)
-            // Posicionado DEBAJO de los botones de zoom
-            CoordinateDisplay(
-                center = uiState.center,
-                zoomLevel = uiState.zoom.toInt(),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, end = 16.dp, bottom = 70.dp)  // Encima de botones
-            )
-
-            // Indicador de capas activas (esquina superior izquierda)
-            val mbtilesLayersCount = uiState.visibleLayers.count { it.type == LayerType.MBTILES && it.isVisible }
-            if (mbtilesLayersCount > 0) {
-                Card(
+            Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                // Controles de Zoom y Escala
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    )
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .background(Color.Black.copy(alpha = 0.2f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = rememberRipple(),
+                            onClick = { showZoomButtons = true }
+                        )
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Layers,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "$mbtilesLayersCount capa${if (mbtilesLayersCount > 1) "s" else ""} MBTiles activa${if (mbtilesLayersCount > 1) "s" else ""}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-
-            // Mensaje de error si existe
-            uiState.errorMessage?.let { error ->
-                Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp),
-                    action = {
-                        TextButton(onClick = { viewModel.clearError() }) {
-                            Text("OK")
+                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AnimatedVisibility(showZoomButtons, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+                                MapControlButton("−") { viewModel.zoomOut(); showZoomButtons = true }
+                            }
+                            AnimatedVisibility(showZoomButtons, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+                                MapControlButton("+") { viewModel.zoomIn(); showZoomButtons = true }
+                            }
                         }
+                        Text(
+                            text = CoordinateUtils.formatScaleWithThousandsAndZoom(
+                                CoordinateUtils.calculateMapScale(uiState.center.latitude, uiState.zoom.toInt()),
+                                uiState.zoom.toInt()
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
                     }
-                ) {
-                    Text(error)
                 }
-            }
 
-            // Indicador de carga
-            if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(48.dp)
+                // Display de coordenadas
+                CoordinateDisplay(
+                    center = uiState.center,
+                    zoomLevel = uiState.zoom.toInt(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
 
-            // Diálogo de permisos si son necesarios
+            // Botón Mi Ubicación
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 30.dp, bottom = 26.dp)
+                    .size(48.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                if (locationPermissions.allPermissionsGranted) {
+                                    if (!uiState.isMyLocationEnabled) viewModel.setMyLocationEnabled(true)
+                                    myLocationOverlay?.myLocation?.let { mapView?.controller?.animateTo(it) }
+                                } else {
+                                    locationPermissions.launchMultiplePermissionRequest()
+                                }
+                            },
+                            onLongPress = {
+                                if (locationPermissions.allPermissionsGranted) {
+                                    viewModel.toggleFollowingLocation()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                } else {
+                                    locationPermissions.launchMultiplePermissionRequest()
+                                }
+                            }
+                        )
+                    },
+                shape = RoundedCornerShape(24.dp),
+                color = if (uiState.isFollowingLocation) MaterialTheme.colorScheme.primary else Color.White,
+                shadowElevation = 4.dp
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = when {
+                            uiState.isFollowingLocation -> Icons.Default.MyLocation
+                            uiState.isMyLocationEnabled -> Icons.Default.GpsFixed
+                            else -> Icons.Default.GpsNotFixed
+                        },
+                        contentDescription = "Mi ubicación",
+                        tint = if (uiState.isFollowingLocation) Color.White else Color.Black
+                    )
+                }
+            }
+
+            // Otros componentes de UI (paneles, diálogos, etc.)
+            if (showBaseMapDialog) {
+                BaseMapSelectionDialog(
+                    currentBaseMap = uiState.baseMapType,
+                    onBaseMapSelected = { viewModel.setBaseMapType(it) },
+                    onDismiss = { showBaseMapDialog = false }
+                )
+            }
+
             if (locationPermissions.shouldShowRationale) {
                 LocationPermissionRationale(
-                    onRequestPermission = {
-                        locationPermissions.launchMultiplePermissionRequest()
-                    },
-                    onDismiss = {
-                        // El usuario canceló la solicitud de permisos
-                    }
+                    onRequestPermission = { locationPermissions.launchMultiplePermissionRequest() },
+                    onDismiss = {}
                 )
             }
         }
     }
 
-    // Limpiar recursos cuando se destruye la vista
     DisposableEffect(Unit) {
-        onDispose {
-            // Limpiar overlays de MBTiles
-            mbtilesOverlays.values.forEach { overlay ->
-                overlay.onDetach(mapView)
-            }
-            mbtilesOverlays.clear()
-            
-            mapView?.onDetach()
-            Timber.d("MapView y overlays liberados")
-        }
+        onDispose { mapView?.onDetach() }
     }
 }
 
-/**
- * Diálogo explicativo para solicitar permisos de ubicación.
- */
+@Composable
+private fun MapControlButton(text: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.size(40.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+fun BaseMapSelectionDialog(
+    currentBaseMap: BaseMapType,
+    onBaseMapSelected: (BaseMapType) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Seleccionar Mapa Base") },
+        text = {
+            LazyColumn {
+                items(BaseMapType.entries) { baseMapType ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = rememberRipple(),
+                                onClick = { onBaseMapSelected(baseMapType); onDismiss() }
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentBaseMap == baseMapType,
+                            onClick = { onBaseMapSelected(baseMapType); onDismiss() }
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(text = getBaseMapName(baseMapType), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+private fun getBaseMapName(baseMapType: BaseMapType): String {
+    return when (baseMapType) {
+        BaseMapType.STREET -> "Callejero (OSM)"
+        BaseMapType.TOPO -> "Topográfico (Mundial)"
+        BaseMapType.SATELLITE -> "Satélite (ESRI)"
+        BaseMapType.IGN_BASE -> "Mapa base (IGN)"
+        BaseMapType.IGN_RASTER -> "MTN25K raster (IGN)"
+        BaseMapType.IGN_PNOA -> "Ortofotos (IGN)"
+//        BaseMapType.IGN_MDT -> "MDT (IGN)"
+//        BaseMapType.IGN_RELIEVE -> "Sombreado de relieve (IGN)"
+//        BaseMapType.IGN_LIDAR -> "LiDAR (IGN)"
+//        BaseMapType.ITACYL_ORTO -> "Ortofotos (ITACyL)"
+        BaseMapType.IDECYL_ORTO -> "Ortofotos (IDECyL)"
+        BaseMapType.IDECYL_TOPO -> "Topográfico (IDECyL)"
+    }
+}
+
 @Composable
 fun LocationPermissionRationale(
     onRequestPermission: () -> Unit,
@@ -464,24 +721,9 @@ fun LocationPermissionRationale(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Permisos de ubicación necesarios")
-        },
-        text = {
-            Text(
-                "DasoMaps necesita acceso a tu ubicación para mostrarte tu posición " +
-                "en el mapa y permitirte capturar geometrías con datos de ubicación precisos."
-            )
-        },
-        confirmButton = {
-            Button(onClick = onRequestPermission) {
-                Text("Conceder permisos")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
+        title = { Text("Permisos de ubicación necesarios") },
+        text = { Text("DasoMaps necesita acceso a tu ubicación para mostrarte tu posición en el mapa y permitirte capturar geometrías con datos de ubicación precisos.") },
+        confirmButton = { Button(onClick = onRequestPermission) { Text("Conceder permisos") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )
 }

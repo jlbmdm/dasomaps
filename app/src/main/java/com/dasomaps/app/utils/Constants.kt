@@ -22,4 +22,14 @@ object Constants {
          */
         const val FILES_DIR_NAME = "mbtiles"
     }
+    
+    /**
+     * Constantes para SharedPreferences
+     */
+    object Preferences {
+        const val PREFS_NAME = "DasoMaps_prefs"
+        const val KEY_LAST_LATITUDE = "last_latitude"
+        const val KEY_LAST_LONGITUDE = "last_longitude"
+        const val KEY_LAST_ZOOM = "last_zoom"
+    }
 }

@@ -235,6 +235,16 @@ class LayerRepository(
         } else {
             null
         }
+        
+        val bandNames = entity.bandNamesJson?.let { json ->
+            try {
+                val type = object : TypeToken<List<String>>() {}.type
+                gson.fromJson<List<String>>(json, type)
+            } catch (e: Exception) {
+                Timber.e(e, "Error al parsear bandNames JSON")
+                null
+            }
+        }
 
         return Layer(
             id = entity.id,
@@ -248,6 +258,10 @@ class LayerRepository(
             syncStatus = SyncStatus.valueOf(entity.syncStatus),
             bounds = bounds,
             zoomLevels = zoomLevels,
+            bandCount = entity.bandCount,
+            bandNames = bandNames,
+            unit = entity.unit,
+            noDataValue = entity.noDataValue,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt
         )
@@ -265,6 +279,15 @@ class LayerRepository(
                 null
             }
         }
+        
+        val bandNamesJson = layer.bandNames?.let { bandNames ->
+            try {
+                gson.toJson(bandNames)
+            } catch (e: Exception) {
+                Timber.e(e, "Error al serializar bandNames a JSON")
+                null
+            }
+        }
 
         return LayerEntity(
             id = layer.id,
@@ -279,6 +302,10 @@ class LayerRepository(
             boundsJson = boundsJson,
             minZoom = layer.zoomLevels?.first,
             maxZoom = layer.zoomLevels?.last,
+            bandCount = layer.bandCount,
+            bandNamesJson = bandNamesJson,
+            unit = layer.unit,
+            noDataValue = layer.noDataValue,
             createdAt = layer.createdAt,
             updatedAt = layer.updatedAt
         )

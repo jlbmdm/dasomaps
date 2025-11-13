@@ -27,6 +27,7 @@ import com.dasomaps.app.data.local.DasoMapsDatabase
 import com.dasomaps.app.data.model.Layer
 import com.dasomaps.app.data.model.LayerType
 import com.dasomaps.app.data.repository.LayerRepository
+import com.dasomaps.app.data.repository.RasterRepository
 import com.dasomaps.app.ui.components.LayerInfoDialog
 import com.dasomaps.app.utils.MBTilesManager
 import timber.log.Timber
@@ -51,10 +52,13 @@ fun LayersScreen() {
     val context = LocalContext.current
     val database = remember { DasoMapsDatabase.getInstance(context) }
     val repository = remember { LayerRepository(database.layerDao()) }
-    val viewModel = remember { LayersViewModel(repository) }
+    val rasterRepository = remember { RasterRepository(context) }
+    val viewModel = remember { LayersViewModel(repository, rasterRepository) }
     
     val uiState by viewModel.uiState.collectAsState()
     var showAddMBTilesDialog by remember { mutableStateOf(false) }
+    var showAddGeoTIFFDialog by remember { mutableStateOf(false) }
+    var showAddLayerMenu by remember { mutableStateOf(false) }
     
     // Lista filtrada de capas (búsqueda + tipo)
     val filteredLayers = remember(uiState.layers, uiState.searchQuery) {
@@ -90,13 +94,59 @@ fun LayersScreen() {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddMBTilesDialog = true }
+            Column(
+                horizontalAlignment = Alignment.End
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Añadir capa MBTiles"
-                )
+                // Menú desplegable de opciones
+                if (showAddLayerMenu) {
+                    // Opción GeoTIFF
+                    SmallFloatingActionButton(
+                        onClick = {
+                            showAddGeoTIFFDialog = true
+                            showAddLayerMenu = false
+                        },
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Image, "GeoTIFF")
+                            Text("GeoTIFF")
+                        }
+                    }
+                    
+                    // Opción MBTiles
+                    SmallFloatingActionButton(
+                        onClick = {
+                            showAddMBTilesDialog = true
+                            showAddLayerMenu = false
+                        },
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Map, "MBTiles")
+                            Text("MBTiles")
+                        }
+                    }
+                }
+                
+                // FAB principal
+                FloatingActionButton(
+                    onClick = { showAddLayerMenu = !showAddLayerMenu }
+                ) {
+                    Icon(
+                        imageVector = if (showAddLayerMenu) Icons.Default.Close else Icons.Default.Add,
+                        contentDescription = "Añadir capa"
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -116,6 +166,7 @@ fun LayersScreen() {
                     EmptyLayersView(
                         onCreateSampleLayers = { viewModel.createSampleLayers() },
                         onAddMBTiles = { showAddMBTilesDialog = true },
+                        onAddGeoTIFF = { showAddGeoTIFFDialog = true },
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
@@ -164,7 +215,7 @@ fun LayersScreen() {
                         LayerTypeFilters(
                             selectedType = uiState.filterType,
                             onTypeSelected = { viewModel.filterByType(it) },
-                            layerCounts = LayerType.values().associateWith { type ->
+                            layerCounts = LayerType.entries.associateWith { type ->
                                 uiState.layers.count { it.type == type }
                             }
                         )
@@ -232,6 +283,17 @@ fun LayersScreen() {
             onLayerAdded = { layer ->
                 viewModel.addLayer(layer)
                 Timber.d("Capa MBTiles añadida: ${layer.name}")
+            }
+        )
+    }
+
+    // Diálogo para añadir GeoTIFF
+    if (showAddGeoTIFFDialog) {
+        AddGeoTIFFDialog(
+            onDismiss = { showAddGeoTIFFDialog = false },
+            onGeoTIFFSelected = { file, layerName ->
+                viewModel.importGeoTIFF(file, layerName)
+                showAddGeoTIFFDialog = false
             }
         )
     }
@@ -363,6 +425,7 @@ fun ReorderableLayersList(
 fun EmptyLayersView(
     onCreateSampleLayers: () -> Unit,
     onAddMBTiles: () -> Unit,
+    onAddGeoTIFF: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -383,22 +446,37 @@ fun EmptyLayersView(
         )
         
         Text(
-            text = "Añade tu primer archivo MBTiles o crea capas de ejemplo",
+            text = "Añade tu primer archivo de capa o crea capas de ejemplo",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(onClick = onAddMBTiles) {
-                Icon(
-                    imageVector = Icons.Default.FolderOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Añadir MBTiles")
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onAddGeoTIFF) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Añadir GeoTIFF")
+                }
+                
+                OutlinedButton(onClick = onAddMBTiles) {
+                    Icon(
+                        imageVector = Icons.Default.Map,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Añadir MBTiles")
+                }
             }
             
             Button(onClick = onCreateSampleLayers) {
@@ -454,7 +532,7 @@ fun LayerTypeFilters(
         }
 
         // Filtros por tipo
-        LayerType.values().forEach { type ->
+        LayerType.entries.forEach { type ->
             val count = layerCounts[type] ?: 0
             if (count > 0) {
                 item {

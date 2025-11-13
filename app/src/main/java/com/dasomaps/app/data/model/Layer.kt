@@ -51,6 +51,10 @@ enum class SyncStatus {
  * @property syncStatus Estado de sincronización
  * @property bounds Límites geográficos [minLon, minLat, maxLon, maxLat]
  * @property zoomLevels Niveles de zoom disponibles
+ * @property bandCount Número de bandas (solo para capas RASTER)
+ * @property bandNames Nombres de las bandas (solo para capas RASTER)
+ * @property unit Unidad de medida (ej: "m", "m³/ha") (solo para capas RASTER)
+ * @property noDataValue Valor que representa ausencia de datos (solo para capas RASTER)
  * @property createdAt Fecha de creación
  * @property updatedAt Fecha de última actualización
  */
@@ -66,6 +70,10 @@ data class Layer(
     val syncStatus: SyncStatus = SyncStatus.LOCAL_ONLY,
     val bounds: List<Double>? = null,
     val zoomLevels: IntRange? = null,
+    val bandCount: Int? = null,
+    val bandNames: List<String>? = null,
+    val unit: String? = null,
+    val noDataValue: Double? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

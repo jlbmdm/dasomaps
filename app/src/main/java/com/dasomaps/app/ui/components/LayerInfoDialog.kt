@@ -2,6 +2,7 @@ package com.dasomaps.app.ui.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -99,7 +100,7 @@ fun LayerInfoDialog(
                 InfoRow(
                     label = "Nombre",
                     value = layer.name,
-                    icon = Icons.Default.Label
+                    icon = Icons.AutoMirrored.Filled.Label
                 )
                 
                 // Tipo de capa

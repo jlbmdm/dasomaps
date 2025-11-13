@@ -48,6 +48,39 @@
     <string name="mbtiles_error_import">Error al importar archivo</string>
     <string name="mbtiles_error_search">Error al buscar archivos</string>
     
+    <!-- Diálogo GeoTIFF -->
+    <string name="geotiff_dialog_title">Añadir GeoTIFF</string>
+    <string name="geotiff_dialog_subtitle">Selecciona un archivo GeoTIFF para añadir como capa ráster</string>
+    <string name="geotiff_dialog_select_file">Seleccionar archivo del dispositivo</string>
+    <string name="geotiff_dialog_search_files">Buscar archivos GeoTIFF</string>
+    <string name="geotiff_dialog_no_files">No se encontraron archivos</string>
+    <string name="geotiff_dialog_no_files_hint">Presiona el botón para buscar</string>
+    <string name="geotiff_dialog_files_found">Archivos encontrados (%d)</string>
+    <string name="geotiff_dialog_file_selected">Archivo seleccionado:</string>
+    <string name="geotiff_dialog_layer_name">Nombre de la capa</string>
+    <string name="geotiff_dialog_show_metadata">Ver metadatos</string>
+    <string name="geotiff_dialog_hide_metadata">Ocultar metadatos</string>
+    <string name="geotiff_dialog_metadata_title">Metadatos</string>
+    <string name="geotiff_dialog_dimensions">Dimensiones</string>
+    <string name="geotiff_dialog_bands">Bandas</string>
+    <string name="geotiff_dialog_data_type">Tipo de dato</string>
+    <string name="geotiff_dialog_estimated_size">Tamaño estimado</string>
+    <string name="geotiff_dialog_nodata">NoData</string>
+    <string name="geotiff_dialog_compression">Compresión</string>
+    <string name="geotiff_dialog_bounds">Límites geográficos</string>
+    <string name="geotiff_dialog_note">Los archivos GeoTIFF deben estar en WGS84 (EPSG:4326). Si tus archivos están en UTM u otro CRS, transformalos en QGIS primero.</string>
+    <string name="geotiff_error_invalid">El archivo seleccionado no es un GeoTIFF válido</string>
+    <string name="geotiff_error_import">Error al importar archivo</string>
+    <string name="geotiff_error_search">Error al buscar archivos</string>
+    <string name="geotiff_add">Añadir GeoTIFF</string>
+    
+    <!-- Panel de Info Ráster -->
+    <string name="raster_info_title">Consulta Ráster</string>
+    <string name="raster_info_coordinates">Coordenadas</string>
+    <string name="raster_info_value">Valor</string>
+    <string name="raster_info_no_data">Sin datos</string>
+    <string name="raster_info_close">Cerrar</string>
+    
     <!-- Tipos de Capas -->
     <string name="layer_type_base_map">Mapa Base</string>
     <string name="layer_type_raster">Ráster</string>

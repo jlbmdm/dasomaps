@@ -35,6 +35,15 @@ data class LayerEntity(
     
     val maxZoom: Int? = null,
     
+    // Campos específicos para capas RASTER (GeoTIFF)
+    val bandCount: Int? = null,
+    
+    val bandNamesJson: String? = null, // JSON array: ["Banda1", "Banda2", ...]
+    
+    val unit: String? = null, // Unidad de medida (ej: "m", "m³/ha")
+    
+    val noDataValue: Double? = null, // Valor que representa ausencia de datos
+    
     val createdAt: Long = System.currentTimeMillis(),
     
     val updatedAt: Long = System.currentTimeMillis()

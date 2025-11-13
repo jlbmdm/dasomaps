@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.dasomaps.app.data.model.Layer
 import com.dasomaps.app.data.model.LayerType
 import com.dasomaps.app.data.repository.LayerRepository
+import com.dasomaps.app.data.repository.RasterRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
 
 /**
  * Estado de la UI de capas.
@@ -37,7 +39,8 @@ data class LayersUiState(
  * Gestiona el estado de las capas y las operaciones sobre ellas.
  */
 class LayersViewModel(
-    private val layerRepository: LayerRepository
+    private val layerRepository: LayerRepository,
+    private val rasterRepository: RasterRepository
 ) : ViewModel() {
 
     // Estado privado mutable
@@ -287,6 +290,40 @@ class LayersViewModel(
             } catch (e: Exception) {
                 showError("Error al reordenar capas: ${e.message}")
                 Timber.e(e, "Error al reordenar capas")
+            }
+        }
+    }
+
+    /**
+     * Importa un archivo GeoTIFF.
+     * 
+     * @param file Archivo GeoTIFF a importar
+     * @param layerName Nombre para la nueva capa
+     */
+    fun importGeoTIFF(file: File, layerName: String) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                Timber.d("Iniciando importación de GeoTIFF: ${file.name}")
+                
+                // Usar RasterRepository para importar
+                val result = rasterRepository.importGeoTIFF(file, layerName)
+                
+                if (result != null) {
+                    val (layer, _) = result
+                    addLayer(layer)
+                    Timber.d("GeoTIFF importado exitosamente: ${layer.name}")
+                } else {
+                    showError("Error al importar GeoTIFF: archivo no válido o formato incorrecto")
+                    Timber.w("Resultado nulo al importar GeoTIFF: ${file.name}")
+                }
+                
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                showError("Error al importar: ${e.message}")
+                Timber.e(e, "Error al importar GeoTIFF: ${file.name}")
             }
         }
     }

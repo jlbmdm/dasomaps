@@ -13,10 +13,12 @@ import org.osmdroid.util.GeoPoint
  * Componente que muestra las coordenadas actuales del centro del mapa.
  * 
  * Diseño horizontal con dos cajas:
- * - Izquierda: Coordenadas geográficas (WGS84)
- * - Derecha: Coordenadas UTM con escala en número (con miles y zoom de Google)
+ * - Izquierda: Coordenadas geográficas (WGS84) - 2 líneas
+ * - Derecha: Coordenadas UTM - 2 líneas
  * 
- * Fondo transparente para no ocultar el mapa en exceso.
+ * (La escala se muestra en la fila de botones, no aquí)
+ * 
+ * Fondo semi-transparente (alpha: 0.4) para no ocultar el mapa en exceso.
  */
 @Composable
 fun CoordinateDisplay(
@@ -32,14 +34,14 @@ fun CoordinateDisplay(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Caja izquierda: Coordenadas Geográficas (WGS84)
+        // Caja izquierda: Coordenadas Geográficas (WGS84) - 2 líneas
         Card(
             modifier = Modifier
                 .weight(1f)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)  // 40% opaco
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
@@ -63,14 +65,14 @@ fun CoordinateDisplay(
             }
         }
 
-        // Caja derecha: Coordenadas UTM con escala formateada (con miles y zoom)
+        // Caja derecha: Coordenadas UTM - 2 líneas (SIN ESCALA)
         Card(
             modifier = Modifier
                 .weight(1.5f)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)  // 40% opaco
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
@@ -87,12 +89,7 @@ fun CoordinateDisplay(
                     text = coordInfo.utmStr,
                     style = MaterialTheme.typography.bodySmall
                 )
-                // Tercera línea: Escala con miles y zoom
-                Text(
-                    text = coordInfo.scaleFormattedWithZoom,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                )
+                // Nota: La escala ahora se muestra en la fila de botones
             }
         }
     }
