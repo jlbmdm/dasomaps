@@ -10,6 +10,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        
+        // Repositorio para AARs locales (GDAL)
+        flatDir {
+            dirs("app/libs")
+        }
     }
 }
 

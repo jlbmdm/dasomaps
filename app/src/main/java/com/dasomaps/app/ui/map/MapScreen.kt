@@ -30,6 +30,7 @@ import com.dasomaps.app.data.model.LayerType
 import com.dasomaps.app.data.repository.LayerRepository
 import com.dasomaps.app.data.repository.RasterRepository
 import com.dasomaps.app.ui.components.CoordinateDisplay
+import com.dasomaps.app.ui.components.RasterInfoPanel
 import com.dasomaps.app.utils.Constants
 import com.dasomaps.app.utils.CoordinateUtils
 import com.dasomaps.app.utils.MBTilesUpscalingProvider
@@ -359,6 +360,7 @@ fun MapScreen() {
     val layerRepository = remember { LayerRepository(database.layerDao()) }
     val rasterRepository = remember { RasterRepository(context) }
     val viewModel = remember { MapViewModel(context, layerRepository, rasterRepository) }
+//    val viewModel = remember { MapViewModel(repository, context) }
 
     val uiState by viewModel.uiState.collectAsState()
 
@@ -678,6 +680,16 @@ fun MapScreen() {
                     onDismiss = {}
                 )
             }
+            
+            // Panel de Información de Píxeles
+            RasterInfoPanel(
+                rasterValues = uiState.rasterValues,
+                visible = uiState.showRasterInfoPanel,
+                onDismiss = { viewModel.dismissRasterInfoPanel() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
+            )
         }
     }
 

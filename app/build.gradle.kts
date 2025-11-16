@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.dasomaps.app"
     compileSdk = 36
+    ndkVersion = "25.2.9519653"
 
     defaultConfig {
         applicationId = "com.dasomaps.app"
@@ -22,7 +23,6 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
-
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -48,7 +48,7 @@ android {
         buildConfig = true  // Generar BuildConfig
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
             useLegacyPackaging = true
         }
@@ -102,10 +102,8 @@ dependencies {
 
     implementation(libs.datastorePreferences)
 
-    // Lectura de archivos TIFF/GeoTIFF
-    implementation(libs.twelvemonkeysTiff)
-    implementation(libs.twelvemonkeysCore)
-    implementation(libs.commonsImaging)
+    // GDAL para lectura de GeoTIFF (archivo AAR local)
+    implementation(mapOf("name" to "gdal-release", "ext" to "aar"))
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutinesTest)

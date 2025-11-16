@@ -2,6 +2,7 @@ package com.dasomaps.app
 
 import android.app.Application
 import com.dasomaps.app.BuildConfig
+import com.dasomaps.app.utils.GeoTIFFReader
 import org.osmdroid.config.Configuration
 import timber.log.Timber
 import java.io.File
@@ -22,6 +23,9 @@ class DasoMapsApplication : Application() {
 
         // Configurar osmdroid
         initializeOsmdroid()
+
+        // Inicializar GDAL para lectura de GeoTIFF
+        initializeGdal()
 
         Timber.d("DasoMaps Application iniciada")
     }
@@ -57,5 +61,17 @@ class DasoMapsApplication : Application() {
 //        osmConfig.isDebugMode = false
 
         Timber.d("osmdroid configurado. Cache path: ${tileCache.absolutePath}")
+    }
+
+    /**
+     * Inicializa GDAL para lectura de archivos GeoTIFF.
+     */
+    private fun initializeGdal() {
+        try {
+            GeoTIFFReader.initializeGdal()
+            Timber.d("GDAL inicializado correctamente")
+        } catch (e: Exception) {
+            Timber.e(e, "Error al inicializar GDAL")
+        }
     }
 }
